@@ -8,6 +8,7 @@ import {
   UserRole,
   ReportReviewLog,
 } from '../types';
+import { generateClientFallbackDraft } from '../utils/reportGenerator';
 import {
   Sparkles,
   Printer,
@@ -60,26 +61,44 @@ export const AiReportView: React.FC<AiReportViewProps> = ({
     setNotification({ type: 'info', text: 'AI 正依據三次試線原始紀錄與防呆規則產生報告草稿...' });
 
     try {
-      const response = await fetch('/api/ai/generate-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          caseData,
-          trials,
-          anomalies,
-          actionItems,
-          formulas: {
-            t1_dpto: 12.67,
-            t2_dpto: 2.0,
-            t3_dpto: 0.6,
-            t3_speedAchievement: '100.0%',
-            t3_downtime: 0.0,
-          },
-        }),
-      });
+      let draftText = '';
+      let isFallback = false;
 
-      const data = await response.json();
-      if (data.success && data.draftText) {
+      try {
+        const response = await fetch('/api/ai/generate-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caseData,
+            trials,
+            anomalies,
+            actionItems,
+            formulas: {
+              t1_dpto: 12.67,
+              t2_dpto: 2.0,
+              t3_dpto: 0.6,
+              t3_speedAchievement: '100.0%',
+              t3_downtime: 0.0,
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          draftText = data.draftText || '';
+          isFallback = !!data.isFallback;
+        } else {
+          // E.g. 404 on static GitHub Pages
+          draftText = generateClientFallbackDraft(caseData, trials, anomalies, actionItems);
+          isFallback = true;
+        }
+      } catch {
+        // Network failure or static environment without Express backend
+        draftText = generateClientFallbackDraft(caseData, trials, anomalies, actionItems);
+        isFallback = true;
+      }
+
+      if (draftText) {
         const nextRevNum = report.history.length + 1;
         const newHistoryLog: ReportReviewLog = {
           id: `rev-${Date.now()}`,
@@ -87,7 +106,7 @@ export const AiReportView: React.FC<AiReportViewProps> = ({
           reviewer: currentRole === 'pm' ? '林維德 (專案窗口)' : currentRole === 'qa' ? '黃雅涵 (品保)' : '系統自動',
           reviewerRole: currentRole,
           action: 'submit',
-          comments: data.isFallback
+          comments: isFallback
             ? '系統依據工規邏輯生成結構化草稿 (標示[來源]、[未提供]與[待驗證])'
             : 'Gemini 模型依據試線紀錄生成正式工程分析草稿',
           timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
@@ -98,26 +117,24 @@ export const AiReportView: React.FC<AiReportViewProps> = ({
           version: `v1.${nextRevNum}-草稿`,
           isApproved: false,
           isDraft: true,
-          content: data.draftText,
+          content: draftText,
           history: [newHistoryLog, ...report.history],
         };
 
         onUpdateReport(updated);
-        setEditedContent(data.draftText);
+        setEditedContent(draftText);
         setNotification({
           type: 'success',
-          text: data.isFallback
+          text: isFallback
             ? '已依工規成功產出報告草稿，已嚴格標示[來源]、[未提供]與[待驗證]！'
             : 'Gemini API 已成功產生工程試線報告草稿！',
         });
-      } else {
-        throw new Error(data.error || '無法取得 AI 生成內容');
       }
     } catch (err: any) {
       console.error(err);
       setNotification({
         type: 'error',
-        text: `AI 報告產生失敗：${err.message || '未知錯誤'}。原始資料與現有草稿均已完整保留。`,
+        text: `報告產生失敗：${err.message || '未知錯誤'}。原始資料與現有草稿均已完整保留。`,
       });
     } finally {
       setIsGenerating(false);
