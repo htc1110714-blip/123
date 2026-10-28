@@ -1,0 +1,8 @@
+{
+  "name": "橢圓瓶試線紀錄與改善追蹤助手",
+  "description": "專為橢圓瓶包裝生產試線打造的追溯與改善追蹤系統，涵蓋試線條件、設備設定、異常登錄、資料完整性防呆、AI 報告生成、品保審核與工時效益分析。",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
